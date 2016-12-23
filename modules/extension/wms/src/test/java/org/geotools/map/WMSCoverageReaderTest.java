@@ -1,9 +1,11 @@
 package org.geotools.map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.awt.Rectangle;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -12,6 +14,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.media.jai.InterpolationNearest;
 
 import org.apache.commons.httpclient.NameValuePair;
 import org.apache.commons.httpclient.util.ParameterParser;
@@ -30,11 +34,15 @@ import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.ows.ServiceException;
 import org.geotools.parameter.Parameter;
 import org.geotools.referencing.CRS;
+import org.geotools.renderer.lite.gridcoverage2d.GridCoverageReaderHelper;
+import org.geotools.renderer.lite.gridcoverage2d.GridCoverageRenderer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.opengis.parameter.GeneralParameterValue;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+
+import com.vividsolutions.jts.geom.Envelope;
 
 public class WMSCoverageReaderTest {
 
@@ -255,6 +263,34 @@ public class WMSCoverageReaderTest {
         return reader;
     }
 
+    private WMSCoverageReader getReader3857wms11() throws IOException, ServiceException,
+		    MalformedURLException {
+		// prepare the responses
+		MockHttpClient client = new MockHttpClient() {
+		
+		    public HTTPResponse get(URL url) throws IOException {
+		        if (url.getQuery().contains("GetCapabilities")) {
+		            URL caps = WMSCoverageReaderTest.class.getResource("caps110_crs3857.xml");
+		            return new MockHttpResponse(caps, "text/xml");
+		        } else if (url.getQuery().contains("GetMap")
+		                && url.getQuery().contains("world3857")) {
+		            Map<String, String> params = parseParams(url.getQuery());
+		            URL world = WMSCoverageReaderTest.class.getResource("world3857.png");
+		            return new MockHttpResponse(world, "image/png");
+		        } else {
+		            throw new IllegalArgumentException(
+		                    "Don't know how to handle a get request over " + url.toExternalForm());
+		        }
+		    }
+		
+		};
+		// setup the reader
+		WebMapServer server = new WebMapServer(new URL("http://geoserver.org/geoserver/wms"),
+		        client);
+		WMSCoverageReader reader = new WMSCoverageReader(server, getLayer(server, "world3857"));
+		return reader;
+	}
+
     @Test
     public void testCrs84wms13() throws Exception {
         // prepare the responses
@@ -295,6 +331,22 @@ public class WMSCoverageReaderTest {
         assertEquals(worldEnvelope, new ReferencedEnvelope(coverage.getEnvelope()));
     }
 
+    @Test
+    public void testWMSLayerWhenImageShapeIncludesPoles() throws Exception {
+    	WMSCoverageReader reader = getReader3857wms11();
+    	CoordinateReferenceSystem nzgd2000 = CRS.decode("EPSG:4167", true);
+    	ReferencedEnvelope env = new ReferencedEnvelope(-180, 180, -180, 180, nzgd2000);
+    	
+//    	GridCoverageRenderer renderer = new GridCoverageRenderer(nzgd2000, env, new Rectangle(0, 0, 180, 180), null);
+    	
+    	GridCoverageReaderHelper rh = new GridCoverageReaderHelper(reader, new Rectangle(0, 0, 180, 180), env, new InterpolationNearest());
+
+    	GridCoverage2D coverage = rh.readCoverage(null);
+    	
+    	assertNotNull(coverage);
+    
+    }
+    
     private Layer getLayer(WebMapServer server, String layerName) {
         for (Layer layer : server.getCapabilities().getLayerList()) {
             if (layerName.equals(layer.getName())) {
