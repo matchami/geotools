@@ -339,6 +339,9 @@ public class DataUtilities {
             return null; // not a File URL
         }
         String string = url.toExternalForm();
+        if( url.getQuery() != null){
+            string = string.substring(0, string.indexOf("?"));
+        }
         if (string.contains("+")) {
             // this represents an invalid URL created using either
             // file.toURL(); or
@@ -1866,7 +1869,13 @@ public class DataUtilities {
         tb.setName(featureType.getName());
         tb.setCRS(null); // not interested in warnings from this simple method
         for (int i = 0; i < properties.length; i++) {
-            tb.add(featureType.getDescriptor(properties[i]));
+            // let's get the attribute descriptor corresponding to the current property
+            AttributeDescriptor attributeDescriptor = featureType.getDescriptor(properties[i]);
+            if (attributeDescriptor != null) {
+                // if the property doesn't map to an attribute descriptor we ignore it
+                // an attribute descriptor may be omitted for security proposes for example
+                tb.add(attributeDescriptor);
+            }
         }
         setDefaultGeometry(tb, properties, featureType);
         return tb.buildFeatureType();

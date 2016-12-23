@@ -341,6 +341,7 @@ public final class LabelCacheImpl implements LabelCache {
         item.setGraphicsResize((GraphicResize) voParser.getEnumOption(symbolizer, "graphic-resize", GraphicResize.NONE));
         item.setGraphicMargin(voParser.getGraphicMargin(symbolizer, "graphic-margin"));
         item.setPartialsEnabled(voParser.getBooleanOption(symbolizer, PARTIALS_KEY, DEFAULT_PARTIALS));
+        item.setTextUnderlined(voParser.getBooleanOption(symbolizer, UNDERLINE_TEXT_KEY, DEFAULT_UNDERLINE_TEXT));
 
         return item;
     }
@@ -611,14 +612,14 @@ public final class LabelCacheImpl implements LabelCache {
 
         // pre compute some labelling params
         final Rectangle2D textBounds = painter.getFullLabelBounds();
-        // ... use at least a 2 pixel step, no matter what the label length is
-        final double step = painter.getAscent() > 2 ? painter.getAscent() : 2;
+        // ... use at least a 8 pixel step (curved processing is quite expensive), no matter what the label length is
+        final double step = painter.getLineHeight() > 8 ? painter.getLineHeight() : 8;
         int space = labelItem.getSpaceAround();
-        int haloRadius = Math.round(labelItem.getTextStyle().getHaloFill() != null ? labelItem
-                .getTextStyle().getHaloRadius() : 0);
         // repetition distance, if any
-        //We extend this distance for a better placement of long labels
-        int labelDistance = (int) (labelItem.getRepeat() > 0 ? labelItem.getRepeat() + (textBounds.getWidth()*2) : 0);
+        int labelDistance = labelItem.getRepeat();
+        if(labelDistance > 0 && labelItem.isFollowLineEnabled()) {
+            labelDistance += textBounds.getWidth();
+        }
         // min distance, if any
         int minDistance = labelItem.getMinGroupDistance();
         LabelIndex groupLabels = new LabelIndex();
@@ -654,7 +655,9 @@ public final class LabelCacheImpl implements LabelCache {
             // labels
             double[] labelPositions;
             if (labelDistance > 0 && labelDistance < lineStringLength / 2) {
-                labelPositions = new double[(int) (lineStringLength / (labelDistance*0.5))];
+                // one label in the middle, plus all the labels we can fit before/after on the two half lines
+                final int positionCount = (int) ((lineStringLength / 2) / labelDistance) * 2 + 1;
+                labelPositions = new double[positionCount];
                 labelPositions[0] = lineStringLength / 2;
                 double offset = labelDistance;
                 for (int i = 1; i < labelPositions.length; i++) {
@@ -681,13 +684,9 @@ public final class LabelCacheImpl implements LabelCache {
 
                 // label displacement loop
                 boolean painted = false;
-                //Original has labelOffset * 2
-                //The displacement limit is augmented for
-                //better flexibility
-                while (Math.abs(currOffset) <= (labelOffset + (textBounds.getWidth()))&& !painted) {
+                while (Math.abs(currOffset) <= (labelOffset * 2) && !painted) {
                     // reset transform and other computation parameters
                     tx.setToIdentity();
-                    Rectangle2D labelEnvelope = null;
                     double maxAngleChange = 0;
                     boolean curved = false;
 
